@@ -1,0 +1,11 @@
+{
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "editor.formatOnSave": true,
+  "eslint.validate": [
+    "javascript",
+    "typescript"
+	],
+	"prisma.pinToPrisma6": true
+}
