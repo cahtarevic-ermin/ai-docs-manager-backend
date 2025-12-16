@@ -1,4 +1,4 @@
-# AI Document Manager - Backend
+# Atlas - AI Document Manager backend service
 
 A NestJS-based backend API for intelligent document management with AI-powered text extraction, summarization, and tagging.
 
