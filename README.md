@@ -267,7 +267,6 @@ This application is designed to be deployed using Terraform (see separate `ai-do
 
 ### AWS Resources Required
 - S3 buckets (raw and processed)
-- RDS PostgreSQL instance
 - SQS queue (for job processing)
 - SNS topic (for notifications)
 - Lambda function (optional for processing) or ECS Fargate
