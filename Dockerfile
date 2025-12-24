@@ -37,8 +37,8 @@ WORKDIR /app
 RUN apk add --no-cache openssl
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S ai-docs-manager && \
-	adduser -S ai-docs-manager -u 1001
+RUN addgroup -g 1001 -S atlas && \
+	adduser -S atlas -u 1001
 
 # Copy package files
 COPY package*.json ./
@@ -53,9 +53,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/generated ./generated
 
 # Change ownership to non-root user
-RUN chown -R ai-docs-manager:ai-docs-manager /app
+RUN chown -R atlas:atlas /app
 
-USER ai-docs-manager
+USER atlas
 
 # Expose port
 EXPOSE 3000

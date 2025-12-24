@@ -1,8 +1,8 @@
-name: ai-docs-manager-dev
+name: atlas-dev
 
 services:
   app:
-    container_name: ai-docs-manager-dev-app
+    container_name: atlas-dev-app
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -11,7 +11,7 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/ai-docs-manager?schema=public
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/atlas?schema=public
       - JWT_ACCESS_TOKEN_SECRET=${JWT_ACCESS_TOKEN_SECRET}
       - JWT_REFRESH_TOKEN_SECRET=${JWT_REFRESH_TOKEN_SECRET}
     volumes:
@@ -22,14 +22,14 @@ services:
         condition: service_healthy
 
   db:
-    container_name: ai-docs-manager-dev-db
+    container_name: atlas-dev-db
     image: postgres:16-alpine
     ports:
       - "5433:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=ai-docs-manager
+      - POSTGRES_DB=atlas
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
     healthcheck:
