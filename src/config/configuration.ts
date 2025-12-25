@@ -12,4 +12,7 @@ export default () => ({
   database: {
     url: process.env.DATABASE_URL,
   },
+  logos: {
+    baseUrl: process.env.LOGOS_BASE_URL || 'http://localhost:8000',
+  },
 });
