@@ -31,6 +31,7 @@ model User {
 
   // relation to refresh tokens
   refresh_tokens RefreshToken[]
+	documents      Document[] 
 }
 
 model RefreshToken {
@@ -40,4 +41,33 @@ model RefreshToken {
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
   created_at DateTime @default(now())
   expires_at DateTime
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Document {
+  id              String         @id @default(uuid())
+  user_id         String
+  user            User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
+  // Document info
+  filename        String
+  content_type    String
+  
+  // Logos RAG service reference
+  logos_id        String?        @unique  // ID from Logos service
+  
+  // Processing results (cached from Logos)
+  status          DocumentStatus @default(PENDING)
+  summary         String?
+  classification  String?
+  error_message   String?
+  
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
 }
