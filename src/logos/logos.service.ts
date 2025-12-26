@@ -71,7 +71,10 @@ export class LogosService {
   async getDocument(logosId: string): Promise<LogosDocument> {
     try {
       const response = await firstValueFrom(this.httpService.get<LogosDocument>(`/documents/${logosId}`));
-      return response.data;
+      return {
+        ...response.data,
+        status: response.data.status?.toUpperCase() as DocumentStatus,
+      };
     } catch (error) {
       this.handleError(error, 'Failed to get document from Logos');
     }
