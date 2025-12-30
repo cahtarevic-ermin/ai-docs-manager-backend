@@ -1,149 +1,185 @@
-# Atlas - AI Document Manager backend service
+# Atlas - AI Document Manager Backend
 
-A NestJS-based backend API for intelligent document management with AI-powered text extraction, summarization, and tagging.
-
-## Overview
-
-This backend service provides a REST API for uploading documents (PDFs/images), extracting text, generating AI summaries and tags, and managing document metadata with full user authentication and role-based access control.
-
-## Features
-
-### Core Features
-- **Document Management**
-  - Upload documents via presigned S3 URLs
-  - Support for PDFs and images
-  - Background processing pipeline
-  - Document search and filtering
-  - Tag-based organization
-
-- **AI-Powered Processing**
-  - Automatic text extraction (Tesseract OCR / AWS Textract / PyPDF2)
-  - AI-generated summaries (short & long) via OpenAI
-  - Automatic tag/keyword generation
-  - Smart document categorization
-
-- **Authentication & Authorization**
-  - JWT-based authentication (access + refresh tokens)
-  - User registration and login
-  - Role-based access control (USER, ADMIN)
-  - Password hashing with Argon2
-  - Protected routes with guards
-
-- **Storage & Processing**
-  - AWS S3 integration (raw and processed buckets)
-  - Background job processing (SQS/BullMQ)
-  - Processing task tracking
-  - Status notifications
-
-- **Database**
-  - PostgreSQL with Prisma ORM
-  - Optimized indexes for search performance
-  - Full-text search capabilities
+NestJS backend API for the AI Document Manager. Provides authentication, document management, and acts as a gateway to the Logos RAG engine for AI-powered document processing and chat.
 
 ## Tech Stack
 
 - **Framework:** NestJS 11
 - **Language:** TypeScript
 - **Database:** PostgreSQL + Prisma ORM
-- **Authentication:** Passport.js + JWT
-- **File Storage:** AWS S3
-- **Queue/Tasks:** SQS or Redis (BullMQ)
-- **AI/LLM:** OpenAI API
-- **Text Extraction:** Tesseract / AWS Textract / PyPDF2
-- **Validation:** class-validator, class-transformer, Zod
+- **Authentication:** Passport.js + JWT (access + refresh tokens)
+- **Password Hashing:** Argon2
+- **HTTP Client:** Axios
+- **Validation:** class-validator, class-transformer
 
-## Database Schema
+## Architecture
 
-```sql
-users
-- id (uuid) PK
-- email
-- password_hash
-- name
-- role (user|admin)
-- created_at
-
-documents
-- id (uuid) PK
-- user_id FK -> users.id
-- s3_key_raw
-- s3_key_processed (nullable)
-- filename
-- file_type
-- file_size
-- status (uploaded|processing|done|error)
-- created_at
-- updated_at
-
-processing_tasks
-- id (uuid)
-- document_id FK
-- task_type (extract_text, summarize, watermark)
-- status
-- started_at
-- finished_at
-- error (text)
-
-summaries
-- id
-- document_id FK
-- summary_short (text)
-- summary_long (text)
-- created_at
-
-tags
-- id
-- document_id FK
-- tag (text)
-- score (float)
 ```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Lumen (Next.js Frontend)                     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Atlas (NestJS Backend)                       │
+├─────────────────────────────────────────────────────────────────┤
+│  Auth Module     │  Documents Module  │  Chat Module            │
+│  - Register      │  - Upload (proxy)  │  - SSE streaming        │
+│  - Login         │  - List/Get/Delete │  - RAG queries          │
+│  - Refresh       │  - Status sync     │                         │
+│  - Logout        │                    │                         │
+└─────────────────────────────────────────────────────────────────┘
+         │                    │                    │
+         ▼                    ▼                    ▼
+    PostgreSQL          Logos RAG API         Logos RAG API
+    (Users, Docs)       (Processing)          (Chat/SSE)
+```
+
+## Features
+
+### Authentication
+- JWT-based authentication with access and refresh tokens
+- User registration and login
+- Role-based access control (USER, ADMIN)
+- Secure password hashing with Argon2
+- Token refresh rotation
+- Global route protection with `@Public()` decorator for exceptions
+
+### Document Management
+- Upload documents (proxied to Logos RAG service)
+- List user's documents with ownership filtering
+- Get document details and processing status
+- Sync status from Logos
+- Delete documents (cascades to Logos)
+
+### Chat
+- Real-time chat with documents via SSE streaming
+- Conversation history support
+- Proxied to Logos RAG engine
 
 ## API Endpoints
 
 ### Authentication
-- `POST /auth/register` - Register a new user `{email, password, name}`
-- `POST /auth/login` - Login with credentials `{email, password}`
-- `POST /auth/refresh` - Refresh access token
-- `POST /auth/logout` - Logout user
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| POST | `/auth/register` | Register new user | Public |
+| POST | `/auth/login` | Login with credentials | Public |
+| POST | `/auth/refresh` | Refresh access token | Refresh Token |
+| POST | `/auth/logout` | Logout and invalidate token | Access Token |
 
 ### Documents
-- `POST /documents/presign` - Get presigned S3 upload URL `{filename, contentType}`
-- `POST /documents` - Create document record `{key, filename, userId}`
-- `GET /documents` - List documents with search, tags & pagination `?search=&tag=&page=`
-- `GET /documents/:id` - Get document details with summary and tags
-- `DELETE /documents/:id` - Delete document (admin or owner)
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| POST | `/documents/upload` | Upload document (multipart) | Access Token |
+| GET | `/documents` | List user's documents | Access Token |
+| GET | `/documents/:id` | Get document details | Access Token |
+| GET | `/documents/:id/status` | Get processing status | Access Token |
+| POST | `/documents/:id/sync` | Sync status from Logos | Access Token |
+| DELETE | `/documents/:id` | Delete document | Access Token |
 
-### Admin
-- `GET /tasks` - View processing tasks and monitoring
+### Chat
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| POST | `/chat` | Chat with document (SSE stream) | Access Token |
 
-### Webhooks
-- `POST /webhook/s3-event` - Handle S3 event notifications for processing
+## Database Schema
 
-## Processing Pipeline
+```prisma
+enum Role {
+  USER
+  ADMIN
+}
 
-1. **Upload**: User requests presigned URL and uploads file to `raw-docs` S3 bucket
-2. **Trigger**: S3 Event (ObjectCreated) triggers Lambda or sends to SQS
-3. **Extract Text**: 
-   - PDFs: PyPDF2 or pdfminer
-   - Images: Tesseract OCR or AWS Textract
-4. **Clean**: Normalize and clean extracted text
-5. **AI Processing**: Call OpenAI API to generate:
-   - Summary (short & long versions)
-   - Tags/keywords
-   - Optional title generation
-6. **Store**: Save results to PostgreSQL (summaries, tags)
-7. **Process File**: Generate processed file (flattened PDF with watermark or preview image)
-8. **Upload**: Store processed file in `processed-docs` bucket
-9. **Notify**: Send completion notification (SNS/Slack/email)
-10. **Complete**: Update document status to `done`
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
 
-## Project Setup
+model User {
+  id             String         @id @default(uuid())
+  email          String         @unique
+  password_hash  String
+  name           String?
+  role           Role           @default(USER)
+  created_at     DateTime       @default(now())
+  updated_at     DateTime       @updatedAt
+  refresh_tokens RefreshToken[]
+  documents      Document[]
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  user_id    String
+  user       User     @relation(...)
+  created_at DateTime @default(now())
+  expires_at DateTime
+}
+
+model Document {
+  id             String         @id @default(uuid())
+  user_id        String
+  user           User           @relation(...)
+  filename       String
+  content_type   String
+  logos_id       String?        @unique  // Reference to Logos service
+  status         DocumentStatus @default(PENDING)
+  summary        String?
+  classification String?
+  error_message  String?
+  created_at     DateTime       @default(now())
+  updated_at     DateTime       @updatedAt
+}
+```
+
+## Project Structure
+
+```
+src/
+├── auth/                    # Authentication module
+│   ├── decorators/          # @CurrentUser, @Public, @Roles
+│   ├── dto/                 # Login, Register, Tokens DTOs
+│   ├── guards/              # JwtAuthGuard, RolesGuard
+│   ├── strategies/          # JWT and Refresh strategies
+│   ├── auth.controller.ts
+│   ├── auth.service.ts
+│   └── auth.module.ts
+├── documents/               # Document management
+│   ├── dto/                 # Document DTOs
+│   ├── documents.controller.ts
+│   ├── documents.service.ts
+│   └── documents.module.ts
+├── chat/                    # Chat with documents
+│   ├── dto/                 # Chat DTOs
+│   ├── chat.controller.ts
+│   ├── chat.service.ts
+│   └── chat.module.ts
+├── logos/                   # Logos RAG service client
+│   ├── logos.service.ts     # HTTP client for Logos API
+│   └── logos.module.ts
+├── database/                # Prisma setup
+│   ├── prisma.service.ts
+│   └── prisma.module.ts
+├── config/                  # Configuration
+│   ├── configuration.ts
+│   └── validation.ts
+├── app.module.ts
+└── main.ts
+
+prisma/
+├── schema.prisma            # Database schema
+└── migrations/              # Database migrations
+```
+
+## Getting Started
 
 ### Prerequisites
-- Node.js 18+ and npm
+
+- Node.js 18+
 - PostgreSQL database
-- AWS account (S3, SQS/SNS optional for production)
-- OpenAI API key
+- Logos RAG service running
 
 ### Installation
 
@@ -151,54 +187,46 @@ tags
 # Install dependencies
 npm install
 
-# Set up environment variables
+# Set up environment
 cp .env.example .env
 # Edit .env with your configuration
+```
 
-# Run database migrations
+### Environment Variables
+
+Create `.env` file:
+
+```env
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/atlas
+
+# JWT
+JWT_ACCESS_TOKEN_SECRET=your-access-secret
+JWT_REFRESH_TOKEN_SECRET=your-refresh-secret
+JWT_ACCESS_TOKEN_EXPIRATION=30m
+JWT_REFRESH_TOKEN_EXPIRATION=7d
+
+# Logos RAG Service
+LOGOS_BASE_URL=http://localhost:8000
+
+# App
+PORT=3000
+```
+
+### Database Setup
+
+```bash
+# Run migrations
 npx prisma migrate dev
 
 # Generate Prisma client
 npx prisma generate
 ```
 
-### Environment Variables
-
-```env
-# Database
-DATABASE_URL="postgresql://user:password@localhost:5432/ai_docs_manager"
-
-# JWT
-JWT_SECRET="your-secret-key"
-JWT_REFRESH_SECRET="your-refresh-secret"
-JWT_EXPIRES_IN="15m"
-JWT_REFRESH_EXPIRES_IN="7d"
-
-# AWS S3
-AWS_REGION="us-east-1"
-AWS_ACCESS_KEY_ID="your-access-key"
-AWS_SECRET_ACCESS_KEY="your-secret-key"
-S3_BUCKET_RAW="raw-docs"
-S3_BUCKET_PROCESSED="processed-docs"
-
-# OpenAI
-OPENAI_API_KEY="your-openai-key"
-
-# Queue (optional)
-REDIS_HOST="localhost"
-REDIS_PORT=6379
-# OR
-SQS_QUEUE_URL="your-sqs-queue-url"
-
-# App
-PORT=3000
-NODE_ENV="development"
-```
-
-## Running the Application
+### Running the Application
 
 ```bash
-# Development mode
+# Development mode (with hot reload)
 npm run start:dev
 
 # Production mode
@@ -208,6 +236,85 @@ npm run start:prod
 # Debug mode
 npm run start:debug
 ```
+
+## Docker Development
+
+```bash
+# Start PostgreSQL
+docker compose -f docker-compose.dev.yml up -d db
+
+# Run migrations
+npx prisma migrate dev
+
+# Start the application
+npm run start:dev
+```
+
+## Makefile Commands
+
+```bash
+make dev        # Start dev environment
+make build      # Build application
+make migrate    # Run database migrations
+make clean      # Clean up containers
+```
+
+## Authentication Flow
+
+### Registration
+```bash
+curl -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "password123", "name": "John"}'
+```
+
+### Login
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "password123"}'
+```
+
+Response:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+### Using Protected Endpoints
+```bash
+curl http://localhost:3000/documents \
+  -H "Authorization: Bearer <access_token>"
+```
+
+## Document Upload Flow
+
+1. Frontend sends file to `/documents/upload`
+2. Atlas validates file type and size
+3. Atlas proxies upload to Logos RAG service
+4. Logos returns document ID and queues processing
+5. Atlas creates local document record with Logos reference
+6. Frontend polls `/documents/:id/status` for updates
+7. When complete, document is ready for chat
+
+## Chat Flow
+
+1. Frontend sends POST to `/chat` with document_id and message
+2. Atlas validates document ownership and status
+3. Atlas proxies request to Logos `/chat` endpoint
+4. Logos performs RAG: embed query → vector search → LLM
+5. Response streams back via SSE through Atlas to frontend
+
+## Security
+
+- JWT tokens with short expiration (30 min access, 7 day refresh)
+- Refresh token rotation on each use
+- Password hashing with Argon2
+- Role-based access control
+- Document ownership validation
+- Global JWT guard with `@Public()` exceptions
 
 ## Testing
 
@@ -222,121 +329,21 @@ npm run test:e2e
 npm run test:cov
 ```
 
-## Project Structure
+## Related Projects
 
-```
-src/
-├── auth/                  # Authentication module
-│   ├── decorators/        # Custom decorators (@CurrentUser, @Public, @Roles)
-│   ├── dto/               # Data transfer objects
-│   ├── guards/            # Route guards (JWT, Roles)
-│   └── strategies/        # Passport strategies
-├── documents/             # Document management module
-│   ├── dto/               # Document DTOs
-│   ├── entities/          # Document entities
-│   └── documents.service.ts
-├── processing/            # Background processing module
-│   ├── workers/           # Processing workers
-│   ├── extractors/        # Text extraction services
-│   └── ai/                # AI integration (OpenAI)
-├── storage/               # S3 storage module
-│   └── storage.service.ts
-├── webhooks/              # Webhook handlers
-│   └── s3-events.controller.ts
-├── config/                # Configuration management
-├── database/              # Prisma service and module
-└── main.ts                # Application entry point
-```
+- **[Logos](../logos)** - Python RAG engine (FastAPI + LangChain + pgvector)
+- **[Lumen](../lumen)** - Next.js frontend application
 
-## Local Development with Docker
+## Scripts Reference
 
 ```bash
-# Start PostgreSQL and Redis
-docker-compose up -d
-
-# Run migrations
-npx prisma migrate dev
-
-# Start the application
-npm run start:dev
+npm run start:dev    # Development with hot reload
+npm run start:debug  # Debug mode
+npm run build        # Build for production
+npm run start:prod   # Run production build
+npm run lint         # ESLint
+npm run format       # Prettier
+npm run test         # Jest unit tests
+npm run test:e2e     # E2E tests
+npm run test:cov     # Coverage report
 ```
-
-## Deployment
-
-This application is designed to be deployed using Terraform (see separate `ai-docs-infra` repository).
-
-### AWS Resources Required
-- S3 buckets (raw and processed)
-- SQS queue (for job processing)
-- SNS topic (for notifications)
-- Lambda function (optional for processing) or ECS Fargate
-- IAM roles and policies
-
-### CI/CD
-GitHub Actions workflow included for:
-- Linting and testing on PRs
-- Building and deploying to staging/production
-- Running database migrations
-
-## Architecture Diagram
-
-```
-User → API (NestJS) → PostgreSQL
-         ↓
-    S3 (raw-docs)
-         ↓
-    SQS/Lambda/Worker
-         ↓
-   Text Extraction → OpenAI API
-         ↓
-    PostgreSQL (summaries/tags)
-         ↓
-   S3 (processed-docs)
-         ↓
-    SNS Notification
-```
-
-## Security
-
-- JWT tokens with short expiration and refresh token rotation
-- Password hashing with Argon2
-- Role-based access control
-- AWS IAM policies with least privilege
-- Secrets stored in AWS Secrets Manager or SSM Parameter Store
-- API rate limiting (recommended for production)
-- Input validation on all endpoints
-
-## Performance Considerations
-
-- Database indexes on frequently queried fields
-- Full-text search using PostgreSQL pg_trgm
-- Background processing for heavy operations
-- Presigned URLs for direct S3 uploads (reduces server load)
-- Caching layer for frequently accessed documents (optional)
-
-## Future Enhancements
-
-- Document versioning
-- Collaborative document sharing
-- Advanced search with filters and facets
-- Document comparison and diff
-- Multi-language support for text extraction
-- Batch document upload
-- Custom AI prompts per user
-- Document templates and workflows
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-UNLICENSED - Private project for portfolio demonstration
-
-## Support
-
-For issues, questions, or contributions, please open an issue in the GitHub repository.
