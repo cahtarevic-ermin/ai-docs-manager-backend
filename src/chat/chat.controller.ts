@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Res } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Res, ParseUUIDPipe } from '@nestjs/common';
 import { Response } from 'express';
 import { ChatService } from './chat.service';
 import { ChatRequestDto } from './dto/chat.dto';
@@ -30,5 +30,16 @@ export class ChatController {
       res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
       res.end();
     }
+  }
+
+  @Get('history/:documentId')
+  async getChatHistory(@CurrentUser('id') userId: string, @Param('documentId', ParseUUIDPipe) documentId: string) {
+    return this.chatService.getChatHistory(userId, documentId);
+  }
+
+  @Delete('history/:documentId')
+  async clearChatHistory(@CurrentUser('id') userId: string, @Param('documentId', ParseUUIDPipe) documentId: string) {
+    await this.chatService.clearChatHistory(userId, documentId);
+    return { message: 'Chat history cleared' };
   }
 }
