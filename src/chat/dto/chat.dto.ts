@@ -24,3 +24,17 @@ export class ChatRequestDto {
   @Type(() => ChatMessageDto)
   conversation_history?: ChatMessageDto[];
 }
+
+export class ChatMessageResponseDto {
+  id: string;
+  role: string;
+  content: string;
+  chunk_ids: string[];
+  created_at: Date;
+}
+
+export class ChatHistoryResponseDto {
+  session_id: string;
+  document_id: string;
+  messages: ChatMessageResponseDto[];
+}
